@@ -1,0 +1,29 @@
+# Fichiers générés par Flex/Bison
+lex.yy.c
+parser.tab.c
+parser.tab.h
+parser.output
+
+# Fichiers compilés
+*.o
+*.exe
+compil
+compilateur
+
+# Fichiers temporaires
+*.out
+*.asm
+*.obj
+*.exe
+
+# Dossiers d'IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Fichiers assembleur générés
+*.asm
+
+# Fichiers de test (optionnel)
+# test/*.exe
