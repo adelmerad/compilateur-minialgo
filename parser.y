@@ -191,3 +191,197 @@ id_list
           }
       }
     ;
+
+/* ==========================================================
+   INSTRUCTIONS
+   ========================================================== */
+instructions
+    : /* vide */
+    | instructions instruction
+    ;
+
+instruction
+    : assignment
+    | if_stmt
+    | for_stmt
+    | while_stmt
+    | write_stmt
+    | read_stmt
+    | error ';'   { yyerrok; }
+    ;
+
+/* ---------- AFFECTATION ---------- */
+assignment
+    : IDF '=' expression ';'
+      {
+          SymbolEntry *s = search_symbol($1);
+          if (s == NULL || !s->is_declared) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (variable non declaree)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+          } else if (s->nature == NAT_CONSTANT) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (modification d'une constante)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+          } else {
+              /* Verification compatibilite de type */
+              if (s->type != $3.type && $3.type != TYPE_UNKNOWN && s->type != TYPE_UNKNOWN) {
+                  printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (incompatibilite de type)\n",
+                         yylineno, column, $1);
+                  nb_err_sem++;
+              }
+              gen_quad("=", $3.name, "", $1);
+              set_initialized($1);
+          }
+      }
+    | IDF '[' expression ']' '=' expression ';'
+      {
+          SymbolEntry *s = search_symbol($1);
+          if (s == NULL || !s->is_declared) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (variable non declaree)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+          } else if (s->nature != NAT_ARRAY) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (n'est pas un tableau)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+          } else {
+              if ($3.type != TYPE_INTEGER && $3.type != TYPE_UNKNOWN) {
+                  printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (indice de tableau non entier)\n",
+                         yylineno, column, $1);
+                  nb_err_sem++;
+              }
+              if (is_number($3.name)) {
+                  int idx = atoi($3.name);
+                  if (idx < 0 || idx >= s->array_size) {
+                      printf("Erreur Semantique : ligne %d , colonne %d , element '%s[%d]' (indice hors bornes, taille=%d)\n",
+                             yylineno, column, $1, idx, s->array_size);
+                      nb_err_sem++;
+                  }
+              }
+              if (s->type != $6.type && $6.type != TYPE_UNKNOWN && s->type != TYPE_UNKNOWN) {
+                  printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (incompatibilite de type)\n",
+                         yylineno, column, $1);
+                  nb_err_sem++;
+              }
+              char dest[50];
+              snprintf(dest, sizeof(dest), "%s[%s]", $1, $3.name);
+              gen_quad("=", $6.name, "", dest);
+          }
+      }
+    ;
+
+/* ---------- IF / ELSE ---------- */
+if_stmt
+    : if_header instructions '}' else_clause
+    ;
+
+if_header
+    : IF '(' expression ')' '{'
+      { push_lbl(gen_quad("BZ", $3.name, "", "")); }
+    ;
+
+else_clause
+    : /* pas de ELSE */
+      {
+          int bz = pop_lbl();
+          char lbl[20];
+          sprintf(lbl, "%d", quad_count);
+          update_quad_result(bz, lbl);
+      }
+    | ELSE '{'
+      {
+          int bz = pop_lbl();
+          push_lbl(gen_quad("BR", "", "", ""));
+          char lbl[20];
+          sprintf(lbl, "%d", quad_count);
+          update_quad_result(bz, lbl);
+      }
+      instructions '}'
+      {
+          int br = pop_lbl();
+          char lbl[20];
+          sprintf(lbl, "%d", quad_count);
+          update_quad_result(br, lbl);
+      }
+    ;
+
+/* ---------- FOR ---------- */
+for_stmt
+    : FOR '(' IDF ':' expression ':' expression ':' expression ')'
+      {
+          SymbolEntry *s = search_symbol($3);
+          if (s == NULL || !s->is_declared) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (variable non declaree)\n",
+                     yylineno, column, $3);
+              nb_err_sem++;
+          } else if (s->nature == NAT_CONSTANT) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (modification d'une constante)\n",
+                     yylineno, column, $3);
+              nb_err_sem++;
+          }
+          gen_quad("=", $5.name, "", $3);
+          set_initialized($3);
+          push_lbl(quad_count);
+          char *t = new_temp();
+          gen_quad("<=", $3, $9.name, t);
+          push_lbl(gen_quad("BZ", t, "", ""));
+      }
+      '{' instructions '}'
+      {
+          char *t = new_temp();
+          gen_quad("+", $3, $7.name, t);
+          gen_quad("=", t, "", $3);
+          int bz_idx     = pop_lbl();
+          int loop_start = pop_lbl();
+          char lbl[20];
+          sprintf(lbl, "%d", loop_start);
+          gen_quad("BR", "", "", lbl);
+          sprintf(lbl, "%d", quad_count);
+          update_quad_result(bz_idx, lbl);
+      }
+    ;
+
+/* ---------- WHILE ---------- */
+while_stmt
+    : while_mark '(' expression ')' '{'
+      { $<int_val>$ = gen_quad("BZ", $3.name, "", ""); }
+      instructions '}'
+      {
+          char lbl[20];
+          sprintf(lbl, "%d", $<int_val>1);
+          gen_quad("BR", "", "", lbl);
+          sprintf(lbl, "%d", quad_count);
+          update_quad_result($<int_val>6, lbl);
+      }
+    ;
+
+while_mark
+    : WHILE  { $<int_val>$ = quad_count; }
+    ;
+
+/* ---------- WRITE ---------- */
+write_stmt
+    : WRITE '(' expression ')' ';'
+      { gen_quad("WRITE", $3.name, "", ""); }
+    ;
+
+/* ---------- READ ---------- */
+read_stmt
+    : READ '(' IDF ')' ';'
+      {
+          SymbolEntry *s = search_symbol($3);
+          if (s == NULL || !s->is_declared) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (variable non declaree)\n",
+                     yylineno, column, $3);
+              nb_err_sem++;
+          } else if (s->nature == NAT_CONSTANT) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (lecture dans une constante)\n",
+                     yylineno, column, $3);
+              nb_err_sem++;
+          } else {
+              gen_quad("READ", "", "", $3);
+              set_initialized($3);
+          }
+      }
+    ;
