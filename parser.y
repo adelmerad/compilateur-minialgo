@@ -385,3 +385,146 @@ read_stmt
           }
       }
     ;
+
+/* ==========================================================
+   EXPRESSIONS
+   ========================================================== */
+expression
+    : expression '+' expression
+      {
+          char *t = new_temp();
+          $$.type = ($1.type == TYPE_FLOAT || $3.type == TYPE_FLOAT) ? TYPE_FLOAT :
+                    ($1.type == TYPE_UNKNOWN || $3.type == TYPE_UNKNOWN) ? TYPE_UNKNOWN : TYPE_INTEGER;
+          gen_quad("+", $1.name, $3.name, t);
+          strcpy($$.name, t);
+      }
+    | expression '-' expression
+      {
+          char *t = new_temp();
+          $$.type = ($1.type == TYPE_FLOAT || $3.type == TYPE_FLOAT) ? TYPE_FLOAT :
+                    ($1.type == TYPE_UNKNOWN || $3.type == TYPE_UNKNOWN) ? TYPE_UNKNOWN : TYPE_INTEGER;
+          gen_quad("-", $1.name, $3.name, t);
+          strcpy($$.name, t);
+      }
+    | expression '*' expression
+      {
+          char *t = new_temp();
+          $$.type = ($1.type == TYPE_FLOAT || $3.type == TYPE_FLOAT) ? TYPE_FLOAT :
+                    ($1.type == TYPE_UNKNOWN || $3.type == TYPE_UNKNOWN) ? TYPE_UNKNOWN : TYPE_INTEGER;
+          gen_quad("*", $1.name, $3.name, t);
+          strcpy($$.name, t);
+      }
+    | expression '/' expression
+      {
+          if (is_number($3.name) && atof($3.name) == 0) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '/' (division par zero)\n",
+                     yylineno, column);
+              nb_err_sem++;
+          }
+          char *t = new_temp();
+          $$.type = ($1.type == TYPE_FLOAT || $3.type == TYPE_FLOAT) ? TYPE_FLOAT :
+                    ($1.type == TYPE_UNKNOWN || $3.type == TYPE_UNKNOWN) ? TYPE_UNKNOWN : TYPE_INTEGER;
+          gen_quad("/", $1.name, $3.name, t);
+          strcpy($$.name, t);
+      }
+    | expression '>' expression
+      { char *t = new_temp(); gen_quad(">",  $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression '<' expression
+      { char *t = new_temp(); gen_quad("<",  $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression GEQ expression
+      { char *t = new_temp(); gen_quad(">=", $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression LEQ expression
+      { char *t = new_temp(); gen_quad("<=", $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression EQ expression
+      { char *t = new_temp(); gen_quad("==", $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression NEQ expression
+      { char *t = new_temp(); gen_quad("!=", $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression AND expression
+      { char *t = new_temp(); gen_quad("&&", $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | expression OR expression
+      { char *t = new_temp(); gen_quad("||", $1.name, $3.name, t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | NOT expression
+      { char *t = new_temp(); gen_quad("!", $2.name, "", t);
+        strcpy($$.name, t); $$.type = TYPE_INTEGER; }
+    | '-' expression  %prec UMINUS
+      { char *t = new_temp(); gen_quad("NEG", $2.name, "", t);
+        strcpy($$.name, t); $$.type = $2.type; }
+    | '+' expression  %prec UPLUS
+      { $$ = $2; }
+    | '(' expression ')'
+      { $$ = $2; }
+
+    | IDF
+      {
+          SymbolEntry *s = search_symbol($1);
+          if (s == NULL || !s->is_declared) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (variable non declaree)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+              $$.type = TYPE_UNKNOWN;
+          } else {
+              $$.type = s->type;
+          }
+          strcpy($$.name, $1);
+      }
+
+    | IDF '[' expression ']'
+      {
+          SymbolEntry *s = search_symbol($1);
+          if (s == NULL || !s->is_declared) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (variable non declaree)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+              $$.type = TYPE_UNKNOWN;
+          } else if (s->nature != NAT_ARRAY) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (n'est pas un tableau)\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+              $$.type = s->type;
+          } else {
+              if ($3.type != TYPE_INTEGER && $3.type != TYPE_UNKNOWN) {
+                  printf("Erreur Semantique : ligne %d , colonne %d , element '%s' (indice de tableau non entier)\n",
+                         yylineno, column, $1);
+                  nb_err_sem++;
+              }
+              if (is_number($3.name)) {
+                  int idx = atoi($3.name);
+                  if (idx < 0 || idx >= s->array_size) {
+                      printf("Erreur Semantique : ligne %d , colonne %d , element '%s[%d]' (indice hors bornes, taille=%d)\n",
+                             yylineno, column, $1, idx, s->array_size);
+                      nb_err_sem++;
+                  }
+              }
+              $$.type = s->type;
+          }
+          char tmp[50];
+          snprintf(tmp, sizeof(tmp), "%s[%s]", $1, $3.name);
+          strcpy($$.name, tmp);
+      }
+
+    | INTEGER_CONST
+      {
+          if ($1 < -32768 || $1 > 32767) {
+              printf("Erreur Semantique : ligne %d , colonne %d , element '%d' (entier hors intervalle [-32768, 32767])\n",
+                     yylineno, column, $1);
+              nb_err_sem++;
+          }
+          sprintf($$.name, "%d", $1);
+          $$.type = TYPE_INTEGER;
+      }
+    | FLOAT_CONST
+      {
+          sprintf($$.name, "%g", $1);
+          $$.type = TYPE_FLOAT;
+      }
+    ;
+
+%%
