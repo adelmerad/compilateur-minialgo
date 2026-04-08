@@ -528,3 +528,40 @@ expression
     ;
 
 %%
+
+/* ==========================================================
+   yyerror : appelee automatiquement par Bison en cas d'erreur
+   syntaxique. Format uniforme avec les autres types d'erreurs.
+   ========================================================== */
+void yyerror(const char *s) {
+    printf("Erreur Syntaxique : ligne %d , colonne %d , element '%s' (%s)\n",
+           yylineno, column, yytext, s);
+    nb_err_syn++;
+}
+
+/* ==========================================================
+   main
+   ========================================================== */
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: %s <fichier.minialgo>\n", argv[0]);
+        return 1;
+    }
+    FILE *f = fopen(argv[1], "r");
+    if (!f) {
+        printf("Erreur : impossible d'ouvrir le fichier '%s'\n", argv[1]);
+        return 1;
+    }
+
+    yyin = f;
+    init_symbol_table();
+    init_quads();
+
+    yyparse();
+
+    fclose(f);
+    free_symbol_table();
+
+    int total_err = nb_err_lex + nb_err_syn + nb_err_sem;
+    return total_err > 0 ? 1 : 0;
+}
