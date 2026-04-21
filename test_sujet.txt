@@ -1,0 +1,68 @@
+// ============================================================
+// TEST ERREURS SEMANTIQUES
+// Verifie la detection de :
+//   - Variable non declaree
+//   - Double declaration
+//   - Incompatibilite de type
+//   - Division par zero
+//   - Modification d'une constante
+//   - Taille de tableau invalide
+//   - Indice hors bornes
+//   - Utilisation d'un non-tableau comme tableau
+// ============================================================
+
+PROGRAM TestSem
+
+DECL
+    INTEGER : A, B ;
+
+    // ERREUR : double declaration de 'A'
+    INTEGER : A ;
+
+    FLOAT : X ;
+
+    // ERREUR : double declaration de 'B' avec type different
+    FLOAT : B ;
+
+    CONST PI = 3.14 ;
+
+    // ERREUR : taille de tableau invalide (<=0)
+    INTEGER : T1[0] ;
+    INTEGER : T2[(-5)] ;
+
+    // Tableau valide (pour tests d'indices)
+    INTEGER : T[10] ;
+ENDDECL
+
+BEGIN
+    // ERREUR : variable 'Z' non declaree
+    Z = 5 ;
+
+    // ERREUR : modification d'une constante
+    PI = 6.28 ;
+
+    // ERREUR : incompatibilite de type (INT = FLOAT)
+    A = 3.14 ;
+
+    // ERREUR : division par zero (detectee si divisor constant)
+    A = 10 / 0 ;
+
+    // ERREUR : indice hors bornes (T a 10 cases : 0..9)
+    T[15] = 1 ;
+    T[(-1)] = 2 ;
+
+    // ERREUR : utilisation de 'A' comme tableau alors qu'il est variable
+    A[5] = 10 ;
+
+    // ERREUR : variable non declaree utilisee dans une expression
+    A = Y + 5 ;
+
+    // ERREUR : lecture dans une constante
+    READ(PI) ;
+
+    // ERREUR : variable non declaree dans READ
+    READ(W) ;
+
+    // ERREUR : indice non entier (utilise un float)
+    T[X] = 5 ;
+END
