@@ -1,16 +1,12 @@
 %{
-/* ==========================================================
-   Analyseur Syntaxique + Semantique pour MiniAlgo
-   VERSION PRESENTATION : jusqu'aux quadruplets uniquement.
-   Format des erreurs (selon sujet) :
-     "Erreur <Type> : ligne X , colonne Y , element Z"
-   ========================================================== */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "symbol_table.h"
 #include "quadruplets.h"
+#include "optimization.h"
+#include "codegen.h"
 
 extern int yylex();
 extern int yylineno;
@@ -23,14 +19,12 @@ void yyerror(const char *s);
 
 int nb_err_syn = 0;
 int nb_err_sem = 0;
-DataType current_type;   /* type courant pour declarations */
+DataType current_type;  
 
-/* Helper : detecte un identificateur invalide (marque par le lexer) */
 int is_invalid_id(const char *name) {
     return (name && name[0] == '!' && name[1] == '!');
 }
 
-/* Pile pour le backpatching */
 int label_stack[200];
 int label_top = 0;
 void push_lbl(int v) { label_stack[label_top++] = v; }
@@ -78,24 +72,38 @@ program
     : PROGRAM IDF DECL declarations ENDDECL
       BEGIN_T instructions END
       {
+          int total_err = nb_err_lex + nb_err_syn + nb_err_sem;
+
           printf("\n========== Compilation terminee ==========\n");
           printf("Erreurs lexicales   : %d\n", nb_err_lex);
           printf("Erreurs syntaxiques : %d\n", nb_err_syn);
           printf("Erreurs semantiques : %d\n", nb_err_sem);
 
-          /* AFFICHAGE TOUJOURS : la TS et les quadruplets sont affiches
-             meme en cas d'erreur, pour montrer ce qui a ete analyse. */
+          /* La table des symboles est toujours affichee */
           printf("\n===== Table des symboles =====\n");
           display_symbol_table();
 
-          printf("\n===== Code intermediaire (quadruplets) =====\n");
-          display_quads();
+          if (total_err == 0) {
+              /* PHASE 1 : afficher les quadruplets bruts */
+              printf("\n===== Code intermediaire AVANT optimisation =====\n");
+              display_quads();
 
-          if (nb_err_lex == 0 && nb_err_syn == 0 && nb_err_sem == 0) {
-              printf("\n>>> Programme VALIDE <<<\n");
+              /* PHASE 2 : appliquer les optimisations */
+              printf("\n===== Optimisation du code intermediaire =====\n");
+              optimize_quads();
+
+              printf("\n===== Code intermediaire APRES optimisation =====\n");
+              display_optimized_quads();
+
+              /* PHASE 3 : generer le code 8086 */
+              printf("\n===== Generation du code 8086 =====\n");
+              generate_assembly("output.asm");
+
+              printf("\n>>> Programme VALIDE - Compilation reussie <<<\n");
+              printf(">>> Fichier 8086 cree : output.asm (a ouvrir avec emu8086)\n");
           } else {
-              printf("\n>>> Compilation echouee : %d erreur(s) au total <<<\n",
-                     nb_err_lex + nb_err_syn + nb_err_sem);
+              printf("\n>>> Compilation echouee : %d erreur(s) au total <<<\n", total_err);
+              printf(">>> Code 8086 NON genere (programme invalide)\n");
           }
       }
     ;
@@ -113,7 +121,6 @@ declaration
 
     | type ':' IDF '[' INTEGER_CONST ']' ';'
       {
-          /* Tableau : INTEGER : T[10] ; */
           if (!is_invalid_id($3)) {
               int decl_ok = 1;
               if ($5 <= 0) {
@@ -160,7 +167,6 @@ declaration
           }
       }
 
-    /* RECUPERATION D'ERREUR */
     | error ';'   { yyerrok; }
     ;
 
@@ -529,10 +535,7 @@ expression
 
 %%
 
-/* ==========================================================
-   yyerror : appelee automatiquement par Bison en cas d'erreur
-   syntaxique. Format uniforme avec les autres types d'erreurs.
-   ========================================================== */
+
 void yyerror(const char *s) {
     printf("Erreur Syntaxique : ligne %d , colonne %d , element '%s' (%s)\n",
            yylineno, column, yytext, s);
